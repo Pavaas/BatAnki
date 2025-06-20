@@ -1,44 +1,139 @@
-import streamlit as st
-from config import (
-    handle_file_upload,
-    extract_flashcard_chunks,
-    generate_anki_cards,
-    show_flashcards,
-    export_apkg,
-    export_csv,
-    speak_text
-)
+import os
+import io
+import re
+import fitz  # PyMuPDF
+import docx
+import nltk
+import tempfile
+import speech_recognition as sr
+from pathlib import Path
+from pytube import YouTube
+from youtube_transcript_api import YouTubeTranscriptApi
+from nltk.tokenize import sent_tokenize
+from transformers import pipeline
+from pydub import AudioSegment
 
-st.set_page_config(page_title="🦇 BatAnki – AI Flashcard Wizard", layout="wide")
-st.title("🦇 BatAnki – AI Flashcard Generator")
+# Ensure nltk punkt is downloaded
+nltk.download("punkt", quiet=True)
 
-# Sidebar: Input
-st.sidebar.header("📂 Input Options")
-uploaded_file = st.sidebar.file_uploader("Upload a file", type=["pdf", "txt", "docx", "epub", "mp3"])
-youtube_url = st.sidebar.text_input("Paste YouTube link (optional):")
-text_input = st.sidebar.text_area("Or paste raw text here:")
+# Load summarizer
+try:
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+    SUMMARIZER_AVAILABLE = True
+except Exception:
+    summarizer = None
+    SUMMARIZER_AVAILABLE = False
 
-# Sidebar: Card Settings
-st.sidebar.header("⚙️ Flashcard Settings")
-card_type = st.sidebar.selectbox("Card Type", ["Basic", "Cloze", "Memo", "Reverse", "MCQ"])
-deck_name = st.sidebar.text_input("Deck Name", value="BatAnkiDeck")
+# -------------------------------
+# 📥 INPUT FILE HANDLERS
+# -------------------------------
 
-# Sidebar: Utilities
-st.sidebar.header("🧰 Utilities")
-speak_answer = st.sidebar.checkbox("Enable Text-to-Speech (Answer)")
+def handle_file_upload(uploaded_file, user_text):
+    if uploaded_file:
+        suffix = Path(uploaded_file.name).suffix.lower()
+        if suffix == ".pdf":
+            text = extract_text_from_pdf(uploaded_file)
+        elif suffix == ".txt":
+            text = uploaded_file.read().decode("utf-8")
+        elif suffix in [".mp3", ".wav", ".m4a"]:
+            text = transcribe_audio(uploaded_file)
+        elif suffix in [".doc", ".docx"]:
+            text = extract_text_from_docx(uploaded_file)
+        elif suffix in [".epub"]:
+            text = extract_text_from_epub(uploaded_file)
+        else:
+            text = "Unsupported file type."
+    elif user_text:
+        text = user_text
+    else:
+        text = ""
+    return text
 
-# Process
-if st.sidebar.button("⚡ Generate Flashcards"):
-    with st.spinner("Processing input..."):
-        raw_text = handle_file_upload(uploaded_file, text_input, youtube_url)
-        chunks = extract_flashcard_chunks(raw_text)
-        cards = generate_anki_cards(chunks, card_type)
-        st.session_state.cards = cards
-        st.success(f"✅ Generated {len(cards)} cards!")
+def extract_text_from_pdf(file):
+    text = ""
+    with fitz.open(stream=file.read(), filetype="pdf") as doc:
+        for page in doc:
+            text += page.get_text()
+    return text
 
-# Display Cards
-if "cards" in st.session_state:
-    show_flashcards(st.session_state.cards, speak=speak_answer)
-    st.markdown("---")
-    export_apkg(st.session_state.cards, deck_name)
-    export_csv(st.session_state.cards, deck_name)
+def extract_text_from_docx(file):
+    doc = docx.Document(file)
+    return "\n".join([para.text for para in doc.paragraphs])
+
+def extract_text_from_epub(file):
+    return "EPUB support coming soon..."
+
+def transcribe_audio(file):
+    recognizer = sr.Recognizer()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+        # Convert mp3/m4a to wav
+        sound = AudioSegment.from_file(file)
+        sound.export(temp_audio.name, format="wav")
+        with sr.AudioFile(temp_audio.name) as source:
+            audio = recognizer.record(source)
+        try:
+            return recognizer.recognize_google(audio)
+        except sr.UnknownValueError:
+            return "Could not transcribe audio."
+        finally:
+            os.remove(temp_audio.name)
+
+def fetch_youtube_transcript(url):
+    try:
+        video_id = YouTube(url).video_id
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        return "\n".join([line['text'] for line in transcript])
+    except Exception as e:
+        return f"Error fetching transcript: {str(e)}"
+
+# -------------------------------
+# 🧠 CHUNKING + SUMMARIZATION
+# -------------------------------
+
+def extract_flashcard_chunks(text, max_sentences=4):
+    sentences = sent_tokenize(text)
+    chunks = []
+    current = []
+    for sent in sentences:
+        current.append(sent)
+        if len(current) >= max_sentences:
+            chunks.append(" ".join(current))
+            current = []
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+def summarize_text(text):
+    if summarizer and SUMMARIZER_AVAILABLE:
+        try:
+            return summarizer(text, max_length=100, min_length=30, do_sample=False)[0]["summary_text"]
+        except Exception:
+            return text[:200] + "..."
+    return text[:300] + "..."
+
+# -------------------------------
+# 🧠 FLASHCARD GENERATORS
+# -------------------------------
+
+def generate_flashcards(chunks, card_type="basic"):
+    flashcards = []
+    for chunk in chunks:
+        question, answer = "", ""
+        if card_type == "basic":
+            question = f"What is the key concept in:\n\n{chunk}"
+            answer = summarize_text(chunk)
+        elif card_type == "cloze":
+            answer = summarize_text(chunk)
+            question = chunk.replace(answer.split(" ")[0], "_____", 1)
+        elif card_type == "memo":
+            question = "Explain this concept:"
+            answer = summarize_text(chunk) + f"\n\n(Page reference simulated)"
+        elif card_type == "mcq":
+            answer = summarize_text(chunk)
+            question = f"Which of the following best summarizes:\n\n{chunk}\n\nA) Random\nB) {answer}\nC) Irrelevant\nD) Incorrect"
+        else:
+            question = chunk
+            answer = summarize_text(chunk)
+
+        flashcards.append({"question": question, "answer": answer})
+    return flashcards
