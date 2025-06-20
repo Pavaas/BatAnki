@@ -2,22 +2,8 @@
 BatAnki: Next-Gen AI Flashcard Web App (Beta Version)
 =======================================================
 
-This unified platform generates multimodal flashcards from a wide range of inputs.
-It implements our core stages:
-  • Clean & chunk input (Regurgitation & Peristalsis)
-  • Summarize and generate flashcards (Digestion & Absorption)
-  • Export to CSV/JSON (Excretion)
-  • Final UI enhancements (Resurrection)
-
-Advanced Beta functionalities include:
-  • Additional flashcard types (Reverse, Memo, Image Occlusion)
-  • Adaptive Learning & Gamification (XP, streaks, badges)
-  • Smart Review Scheduler (SM-2)
-  • AnkiConnect Sync (for direct sync to Anki)
-  • Analytics Dashboard (performance tracking)
-  • Voice Input & TTS (optional accessibility enhancements)
-  
-The project supports input from PDF, TXT, DOCX, EPUB, images, and audio (MP3/WAV).
+This app extracts text from various inputs, generates flashcards (including beta types),
+and provides export options. It’s designed using a modular approach with a separate config file.
 """
 
 import streamlit as st
@@ -27,6 +13,7 @@ import os
 import json
 import numpy as np
 import pandas as pd
+import config  # Import centralized configuration
 
 # Optional libraries for OCR and Speech Recognition
 try:
@@ -40,9 +27,7 @@ try:
 except ImportError:
     sr = None
 
-# ---------------------------------------------
-# Utility Functions
-# ---------------------------------------------
+# ------------------ Utility Functions ----------------------
 
 def extract_pdf_text(pdf_file):
     """Extracts text from a PDF file using PyMuPDF."""
@@ -91,31 +76,55 @@ def ocr_extract_text(image_file):
 
 def preprocess_text(text):
     """Placeholder for cleaning and chunking text."""
-    return text.strip()[:5000]
+    # Use the configured maximum text length.
+    return text.strip()[:config.MAX_TEXT_LENGTH]
 
 def summarize_text(text):
     """Dummy summarization function."""
-    return "Summary: " + (text[:200] + "..." if len(text) > 200 else text)
+    if len(text) > config.SUMMARY_LENGTH:
+        return "Summary: " + text[:config.SUMMARY_LENGTH] + "..."
+    else:
+        return "Summary: " + text
 
 def generate_flashcards(text, include_beta=False):
     """Generates dummy flashcards from text.
-    If include_beta is True, additional beta flashcard types are added.
+    If include_beta is True and ENABLE_BETA_FEATURES is set, additional beta flashcard types are added.
     """
     cards = []
     # Core flashcards
-    cards.append({"type": "Basic", "front": "What is BatAnki?",
-                  "back": "A next-gen AI flashcard web app combining multimodal inputs."})
-    cards.append({"type": "MCQ", "question": "Which AI engine is used for summarization?",
-                  "options": ["Mistral", "BART", "GPT", "T5"], "answer": "Mistral"})
-    cards.append({"type": "Cloze", "text": "BatAnki is built using ___ and Python.", "answer": "Streamlit"})
-    # Additional beta flashcard types
-    if include_beta:
-        cards.append({"type": "Reverse", "front": "What is reverse learning in BatAnki?",
-                      "back": "It flips Q and A for alternative recall."})
-        cards.append({"type": "Memo", "front": "Explain the memo card functionality.",
-                      "back": "Provides detailed notes and source references."})
-        cards.append({"type": "Image Occlusion", "front": "Identify the hidden part of the image.",
-                      "back": "The occluded answer details are revealed."})
+    cards.append({
+        "type": "Basic",
+        "front": "What is BatAnki?",
+        "back": "A next-gen AI flashcard web app combining multimodal inputs."
+    })
+    cards.append({
+        "type": "MCQ",
+        "question": "Which AI engine is used for summarization?",
+        "options": ["Mistral", "BART", "GPT", "T5"],
+        "answer": "Mistral"
+    })
+    cards.append({
+        "type": "Cloze",
+        "text": "BatAnki is built using ___ and Python.",
+        "answer": "Streamlit"
+    })
+    # Additional beta flashcard types (if enabled)
+    if include_beta and config.ENABLE_BETA_FEATURES:
+        cards.append({
+            "type": "Reverse",
+            "front": "What is reverse learning in BatAnki?",
+            "back": "It flips Q and A for alternative recall."
+        })
+        cards.append({
+            "type": "Memo",
+            "front": "Explain the memo card functionality.",
+            "back": "Provides detailed notes and source references."
+        })
+        cards.append({
+            "type": "Image Occlusion",
+            "front": "Identify the hidden part of the image.",
+            "back": "The occluded answer details are revealed."
+        })
     return cards
 
 def export_cards_csv(cards):
@@ -137,18 +146,16 @@ def export_cards_json(cards):
     """Exports flashcards to JSON format."""
     return json.dumps(cards, indent=4)
 
-# ---------------------------------------------
-# Streamlit App UI with Tabs for Main & Beta Features
-# ---------------------------------------------
+# ------------------ Streamlit App UI with Tabs -----------------------
 
-st.set_page_config(page_title="🦇 BatAnki: AI Flashcards Beta", layout="wide")
+st.set_page_config(page_title=config.PAGE_TITLE, layout=config.PAGE_LAYOUT)
 st.title("🦇 BatAnki")
 st.caption("AI Flashcards with Multimodal Input | Beta Version with Advanced Features")
 
-# Sidebar: Define input method and show future roadmap
+# Sidebar: Configure input and show future roadmap
 st.sidebar.header("Input Options")
 input_source = st.sidebar.selectbox("Select Input Source", ["File Upload", "Manual Entry", "Voice Input"])
-beta_enabled = st.sidebar.checkbox("Enable Beta Features", value=True)
+beta_enabled = st.sidebar.checkbox("Enable Beta Features", value=config.ENABLE_BETA_FEATURES)
 st.sidebar.markdown("---")
 st.sidebar.write("Future Features:")
 st.sidebar.write("- Adaptive Learning & Gamification")
@@ -158,17 +165,17 @@ st.sidebar.write("- Detailed Analytics Dashboard")
 st.sidebar.write("- Voice Input/TTS")
 st.sidebar.write("- Deck Hub & Marketplace")
 
-# Create tabs for the main pipeline and advanced beta modules
+# Create tabs for Main Pipeline and Beta Features
 tabs = st.tabs(["Main Pipeline", "Beta Features"])
 
-# ---------------------------------------------
-# Input Handling (applies to both tabs)
-# ---------------------------------------------
+# ------------------ Input Handling ---------------------------
 text_input = ""
 with st.container():
     if input_source == "File Upload":
-        uploaded_file = st.file_uploader("📄 Upload a file (PDF, TXT, DOCX, EPUB, PNG, JPG, MP3, WAV)", 
-                                         type=["pdf", "txt", "docx", "epub", "png", "jpg", "mp3", "wav"])
+        uploaded_file = st.file_uploader(
+            "📄 Upload a file (PDF, TXT, DOCX, EPUB, PNG, JPG, MP3, WAV)", 
+            type=["pdf", "txt", "docx", "epub", "png", "jpg", "mp3", "wav"]
+        )
         if uploaded_file:
             ext = uploaded_file.name.lower().split(".")[-1]
             if ext == "pdf":
@@ -189,9 +196,7 @@ with st.container():
         if audio_file:
             text_input = transcribe_audio(audio_file)
 
-# ---------------------------------------------
-# Main Pipeline Tab
-# ---------------------------------------------
+# ------------------ Main Pipeline Tab ---------------------------
 with tabs[0]:
     st.subheader("Extracted/Entered Text")
     if text_input:
@@ -228,9 +233,7 @@ with tabs[0]:
     else:
         st.info("Awaiting input. Please select an input method in the sidebar and upload or enter your content.")
 
-# ---------------------------------------------
-# Beta Features Tab
-# ---------------------------------------------
+# ------------------ Beta Features Tab ---------------------------
 with tabs[1]:
     st.subheader("Beta Features & Advanced Modules")
     st.markdown("### Advanced Flashcard Types")
@@ -249,26 +252,23 @@ with tabs[1]:
     
     st.markdown("### Analytics Dashboard")
     st.write("Dummy Performance Analytics (Beta):")
-    # Generate dummy analytics data
     data = pd.DataFrame({
         'Day': pd.date_range(start="2025-01-01", periods=7),
         'XP': [50, 70, 80, 120, 150, 130, 170]
     })
     st.line_chart(data.set_index('Day'))
     
-    st.markdown("### Voice Input & Text-to-Speech (TTS)")
+    st.markdown("### Voice Input & TTS")
     st.write("Voice transcription is enabled. TTS functionality for flashcards review is in early beta.")
     
     st.markdown("### Upcoming Features")
     st.write("- Enhanced OCR for scanned documents")
     st.write("- Direct export to Anki package (.apkg)")
-    st.write("- Detailed review analytics & smart scheduling")
+    st.write("- Detailed analytics & smart scheduling")
     st.write("- Expanded voice and TTS integration")
     
     st.info("Beta features are experimental. Your feedback is greatly appreciated to help BatAnki evolve!")
 
-# ---------------------------------------------
-# Final Footer
-# ---------------------------------------------
+# ------------------ Final Footer ---------------------------
 st.markdown("---")
 st.caption("BatAnki Beta – Evolving AI Flashcards powered by Streamlit")
