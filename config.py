@@ -10,7 +10,7 @@ MAX_TEXT_LENGTH = 5000       # Maximum number of characters to process
 SUMMARY_LENGTH = 200         # Characters to use for generating a dummy summary
 
 # Export formats supported (for documentation)
-EXPORT_FORMATS = ["csv", "json"]
+EXPORT_FORMATS = ["csv", "json", "apkg"]
 
 # Paths (if needed later for assets or logs)
 ASSETS_PATH = "assets/"
