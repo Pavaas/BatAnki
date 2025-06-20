@@ -1,0 +1,7 @@
+streamlit
+PyMuPDF
+numpy
+pandas
+pytesseract
+Pillow
+SpeechRecognition
