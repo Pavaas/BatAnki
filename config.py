@@ -27,9 +27,9 @@ CONTACT_DETAILS = """
 """
 
 ABOUT_TEXT = """
-**About AnkiGamify**  
-This is a next-gen AI-powered flashcard builder inspired by apps like Flashka.ai and Memo.cards.  
-Your uploads are securely processed and exported as Anki decks.
+**About BatAnki**  
+BatAnki is a powerful, AI-powered flashcard creation engine built to convert textbooks, YouTube videos, and lectures into smart, review-optimized cards.  
+Generate Anki-style decks, memo explanations, clozes, and even image occlusion!
 """
 
 def process_file(uploaded_file):
@@ -73,6 +73,7 @@ def generate_flashcards(text, card_type):
     return cards
 
 def export_deck(cards, export_format):
+    import streamlit as st
     if export_format == "CSV":
         output = io.StringIO()
         writer = csv.writer(output)
@@ -92,7 +93,7 @@ def export_deck(cards, export_format):
                 "afmt": "{{FrontSide}}<hr id='answer'>{{Back}}"
             }]
         )
-        deck = genanki.Deck(2059400110, "AnkiGamify Deck")
+        deck = genanki.Deck(2059400110, "BatAnki Deck")
         for card in cards:
             deck.add_note(genanki.Note(model=model, fields=[card['front'], card['back']]))
 
