@@ -18,3 +18,5 @@ youtube-transcript-api
 transformers
 torch
 sentencepiece
+pytube
+pydub
