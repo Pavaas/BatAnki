@@ -1,16 +1,17 @@
-# BatAnki - AI Flashcard App
+## BatAnki - AI Flashcard Generator
 
-BatAnki is a modern AI-powered app that converts any study material (PDF, DOCX, TXT, YouTube, etc.) into smart Anki flashcards. It supports all AnKing-style cards, image occlusion, memo cards, and future upgrades like adaptive reviews.
+BatAnki is a blazing-fast, modern flashcard generator powered by AI.  
+Just upload your PDF, DOCX, TXT, YouTube links, or MP3 lectures — and turn them into smart, Anki-style decks.
 
 ## 🚀 Features
-- 📚 Upload PDF, TXT, DOCX, MP3, YouTube
-- 💡 AI Flashcard Generator
-- 🧠 Memo Cards + Explanation
-- 🖼️ Image Occlusion Support (Flashka-style)
-- ⬇️ Export as CSV or APKG (Anki)
-- 🎯 Smart Review (coming soon)
+- ✨ Flashcard generator using free AI models
+- 📥 Supports PDF, DOCX, TXT, MP3, YouTube
+- 🧠 Cloze, Memo Cards, Image Occlusion
+- 📤 Export as CSV or APKG
+- 📈 Smart Review Engine (Coming Soon)
+- ⚙️ Offline & Web versions ready
 
-## 📦 Run Locally
+## 🔧 Run Locally
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
