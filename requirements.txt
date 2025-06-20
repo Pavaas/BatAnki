@@ -8,3 +8,5 @@ SpeechRecognition
 genanki
 python-docx
 PyPDF2
+docx2txt
+ebooklib
