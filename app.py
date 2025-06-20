@@ -1,45 +1,55 @@
-# app.py
-
 import streamlit as st
 from config import (
-    handle_file_upload,
+    load_and_process_input,
     generate_flashcards,
+    generate_mcqs,
+    ai_assistant_reply,
+    show_analytics,
+    show_planner,
     export_flashcards,
-    show_sidebar_options,
-    apply_custom_theme,
-)
-from pathlib import Path
-
-# Set up Streamlit page configuration
-st.set_page_config(
-    page_title="BatAnki - AI Flashcard Generator",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    switch_theme,
+    flashcard_viewer,
+    future_lab_features
 )
 
-apply_custom_theme()
+st.set_page_config(page_title="BatAnki - AI Flashcard Maker", layout="wide")
+switch_theme()
 
-# Sidebar
-show_sidebar_options()
+st.title("🦇 BatAnki - AI Flashcard & MCQ Wizard")
 
-# Main App Interface
-st.title("📘 BatAnki - AI Flashcard Generator")
-st.markdown("Create Anki-style decks with AI from PDF, text, DOCX, EPUB, audio, or YouTube.")
+tab = st.sidebar.radio("📚 Navigation", [
+    "📤 Upload & Ingest",
+    "🧠 Flashcards",
+    "📝 MCQ Generator",
+    "🤖 AI Assistant",
+    "📅 Daily Planner",
+    "📊 Analytics",
+    "🧪 Labs"
+])
 
-uploaded_file = st.file_uploader("📂 Upload your input file", type=["pdf", "txt", "docx", "epub", "mp3", "wav", "mp4"])
-user_text = st.text_area("✍️ Or paste/type your own content here")
+if tab == "📤 Upload & Ingest":
+    uploaded_file = st.file_uploader("Upload your material", type=["pdf", "docx", "txt", "epub", "mp3"])
+    typed_text = st.text_area("Or paste/type your notes")
+    if st.button("📥 Process"):
+        load_and_process_input(uploaded_file, typed_text)
 
-if uploaded_file or user_text.strip():
-    with st.spinner("Processing input and generating flashcards..."):
-        input_data = handle_file_upload(uploaded_file, user_text)
-        flashcards = generate_flashcards(input_data)
+elif tab == "🧠 Flashcards":
+    cards = generate_flashcards()
+    if cards:
+        flashcard_viewer(cards)
+        export_flashcards(cards)
 
-        if flashcards:
-            st.success(f"✅ Generated {len(flashcards)} flashcards.")
-            export_format = st.selectbox("📤 Export flashcards as:", ["CSV", "Anki .apkg"])
-            if st.button("Download Flashcards"):
-                export_flashcards(flashcards, export_format)
-        else:
-            st.warning("⚠️ No flashcards generated.")
-else:
-    st.info("📥 Upload a file or enter content to begin.")
+elif tab == "📝 MCQ Generator":
+    generate_mcqs()
+
+elif tab == "🤖 AI Assistant":
+    ai_assistant_reply()
+
+elif tab == "📅 Daily Planner":
+    show_planner()
+
+elif tab == "📊 Analytics":
+    show_analytics()
+
+elif tab == "🧪 Labs":
+    future_lab_features()
