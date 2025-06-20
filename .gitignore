@@ -2,8 +2,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.db
-*.sqlite
 *.apkg
+*.csv
+*.db
 .DS_Store
 .env
+venv/
