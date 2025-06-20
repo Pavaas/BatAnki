@@ -1,55 +1,38 @@
 import streamlit as st
 from config import (
-    load_and_process_input,
-    generate_flashcards,
-    generate_mcqs,
-    ai_assistant_reply,
-    show_analytics,
-    show_planner,
-    export_flashcards,
-    switch_theme,
-    flashcard_viewer,
-    future_lab_features
+    handle_file_upload,
+    extract_flashcard_chunks,
+    generate_anki_cards,
+    show_flashcards,
+    export_apkg,
+    export_csv
 )
 
-st.set_page_config(page_title="BatAnki - AI Flashcard Maker", layout="wide")
-switch_theme()
+st.set_page_config(page_title="🦇 BatAnki", layout="wide")
+st.title("🦇 BatAnki – AI Flashcard Generator")
 
-st.title("🦇 BatAnki - AI Flashcard & MCQ Wizard")
+# Sidebar: Input
+st.sidebar.header("📂 Input Options")
+uploaded_file = st.sidebar.file_uploader("Upload a file", type=["pdf", "txt", "docx", "epub", "mp3"])
+text_input = st.sidebar.text_area("Or paste raw text here:")
 
-tab = st.sidebar.radio("📚 Navigation", [
-    "📤 Upload & Ingest",
-    "🧠 Flashcards",
-    "📝 MCQ Generator",
-    "🤖 AI Assistant",
-    "📅 Daily Planner",
-    "📊 Analytics",
-    "🧪 Labs"
-])
+# Sidebar: Card Settings
+st.sidebar.header("⚙️ Card Settings")
+card_type = st.sidebar.selectbox("Choose Card Type", ["Basic", "Cloze", "Memo", "Reverse", "MCQ"])
+deck_name = st.sidebar.text_input("Deck Name", value="BatAnkiDeck")
 
-if tab == "📤 Upload & Ingest":
-    uploaded_file = st.file_uploader("Upload your material", type=["pdf", "docx", "txt", "epub", "mp3"])
-    typed_text = st.text_area("Or paste/type your notes")
-    if st.button("📥 Process"):
-        load_and_process_input(uploaded_file, typed_text)
+# Process
+if st.sidebar.button("⚡ Generate Flashcards"):
+    with st.spinner("Processing and generating flashcards..."):
+        text = handle_file_upload(uploaded_file, text_input)
+        chunks = extract_flashcard_chunks(text)
+        cards = generate_anki_cards(chunks, card_type)
+        st.session_state.cards = cards
+        st.success(f"✅ Generated {len(cards)} cards!")
 
-elif tab == "🧠 Flashcards":
-    cards = generate_flashcards()
-    if cards:
-        flashcard_viewer(cards)
-        export_flashcards(cards)
-
-elif tab == "📝 MCQ Generator":
-    generate_mcqs()
-
-elif tab == "🤖 AI Assistant":
-    ai_assistant_reply()
-
-elif tab == "📅 Daily Planner":
-    show_planner()
-
-elif tab == "📊 Analytics":
-    show_analytics()
-
-elif tab == "🧪 Labs":
-    future_lab_features()
+# Show Results
+if "cards" in st.session_state:
+    show_flashcards(st.session_state.cards)
+    st.markdown("---")
+    export_apkg(st.session_state.cards, deck_name)
+    export_csv(st.session_state.cards, deck_name)
