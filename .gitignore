@@ -1,55 +1,9 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-.eggs/
-
-# Virtual environments
-.venv/
-env/
-venv/
-ENV/
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Coverage reports and test directories
-.tox/
-.pytest_cache/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-
-# IDE and Editor settings
-.vscode/
-.idea/
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
-# OS-specific files
-.DS_Store
-Thumbs.db
-
-# Streamlit cache and config
-.streamlit/
-
-# Temporary files and folders
-*.tmp
-*.temp
-
-# Environment variables
-.env
-
-# Genanki APKG files (if generated persistently)
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
 *.apkg
+.DS_Store
+.env
