@@ -6,3 +6,4 @@ pytesseract
 Pillow
 SpeechRecognition
 genanki
+python-docx
