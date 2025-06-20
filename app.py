@@ -1,43 +1,67 @@
 import streamlit as st
 from configure import (
-    process_file, generate_flashcards, export_deck, SUPPORTED_FORMATS,
-    ABOUT_TEXT, CONTACT_DETAILS, SIDEBAR_FEATURES
+    process_file, generate_flashcards, export_deck,
+    SUPPORTED_FORMATS, ABOUT_TEXT, CONTACT_DETAILS, SIDEBAR_FEATURES
 )
 
-st.set_page_config(page_title="BatAnki", layout="wide")
+# App Title
+st.set_page_config(page_title="BatAnki - AI Flashcard Generator", layout="wide")
+st.title("🦇 BatAnki - AI Flashcard Wizard")
+st.caption("Upload. Generate. Master.")
 
-# Sidebar UI
-st.sidebar.title("🦇 BatAnki")
-st.sidebar.markdown("### Features")
-for feature in SIDEBAR_FEATURES:
-    st.sidebar.markdown(f"- {feature}")
-st.sidebar.markdown("---")
-st.sidebar.markdown(CONTACT_DETAILS)
+# Sidebar navigation
+st.sidebar.title("🧠 BatAnki Sidebar")
+tab = st.sidebar.radio("Navigate", options=["📂 Upload", "🃏 Flashcards", "📤 Export", "📌 About", "📫 Contact Us", "🧪 Labs"])
 
-# Main UI
-st.title("🧠 BatAnki - AI Flashcard Generator")
-uploaded_file = st.file_uploader("Upload Study Material (PDF, DOCX, TXT, YouTube Link, etc.)", type=SUPPORTED_FORMATS)
+for item in SIDEBAR_FEATURES:
+    st.sidebar.markdown(f"- {item}")
 
-if uploaded_file:
-    with st.spinner("Processing your material..."):
-        raw_text = process_file(uploaded_file)
-    st.success("Material extracted successfully!")
+# File upload tab
+if tab == "📂 Upload":
+    st.subheader("Upload Study Material")
+    uploaded_file = st.file_uploader("Choose a file", type=SUPPORTED_FORMATS)
 
-    flashcard_type = st.selectbox("Choose Flashcard Type", ["Basic", "Cloze", "Memo Card", "Image Occlusion"])
-    if st.button("✨ Generate Flashcards"):
-        with st.spinner("Generating flashcards using AI..."):
-            cards = generate_flashcards(raw_text, flashcard_type)
-            st.session_state["cards"] = cards
-        st.success(f"{len(cards)} cards generated!")
+    if uploaded_file:
+        with st.spinner("🔍 Processing file..."):
+            content = process_file(uploaded_file)
+        st.success("✅ File loaded successfully! Proceed to Flashcards tab.")
 
-    if "cards" in st.session_state:
-        st.subheader("📤 Export Your Deck")
-        export_format = st.radio("Export Format", ["CSV", "APKG"])
-        if st.button("Export Flashcards"):
-            export_deck(st.session_state["cards"], export_format)
+# Flashcard generation tab
+elif tab == "🃏 Flashcards":
+    st.subheader("AI-Generated Flashcards")
+    if "content" not in st.session_state:
+        st.warning("Please upload a file in the 'Upload' tab first.")
+    else:
+        with st.spinner("⚙️ Generating flashcards..."):
+            flashcards = generate_flashcards(st.session_state.content)
+        st.session_state.flashcards = flashcards
+        for idx, card in enumerate(flashcards):
+            st.markdown(f"**Q{idx+1}:** {card['question']}")
+            with st.expander("Show Answer"):
+                st.markdown(card['answer'])
 
-else:
-    st.info("Upload a file or YouTube link to begin.")
+# Export tab
+elif tab == "📤 Export":
+    st.subheader("Export Your Flashcards")
+    if "flashcards" not in st.session_state:
+        st.warning("Generate flashcards first.")
+    else:
+        export_format = st.selectbox("Choose format", ["CSV", "Anki (.apkg)"])
+        if st.button("Export Now"):
+            export_deck(st.session_state.flashcards, export_format)
+            st.success(f"🎉 Exported flashcards as {export_format}")
 
-st.markdown("---")
-st.markdown(ABOUT_TEXT)
+# About tab
+elif tab == "📌 About":
+    st.subheader("About BatAnki")
+    st.markdown(ABOUT_TEXT)
+
+# Contact tab
+elif tab == "📫 Contact Us":
+    st.subheader("Contact Information")
+    st.markdown(CONTACT_DETAILS)
+
+# Labs tab
+elif tab == "🧪 Labs":
+    st.subheader("Experimental Features")
+    st.info("New AI Teaching Assistant, Adaptive Scheduler, and Analytics Dashboard coming soon!")
