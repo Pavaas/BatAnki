@@ -1,126 +1,117 @@
-# config.py
-
-import streamlit as st
-import base64
-import io
+import fitz, docx2txt
+from ebooklib import epub
 import tempfile
-import os
-import csv
-from genanki import Note, Deck, Package, Model
-import uuid
-from PyPDF2 import PdfReader
+import streamlit as st
+from pathlib import Path
+import pandas as pd
+import random
 
-# Basic Flashcard Model
-model = Model(
-    model_id=1607392319,
-    name="BasicModel",
-    fields=[
-        {"name": "Question"},
-        {"name": "Answer"}
-    ],
-    templates=[
-        {
-            "name": "Card 1",
-            "qfmt": "{{Question}}",
-            "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
-        }
-    ]
-)
-
-# Sidebar options
-def show_sidebar_options():
-    st.sidebar.image("https://i.imgur.com/B6jC5kR.png", width=180)
-    st.sidebar.header("🧠 BatAnki Menu")
-    st.sidebar.markdown("""
-- Upload PDF, DOCX, TXT, Audio, YouTube
-- Export to Anki or CSV
-- Use AI to generate high-yield cards
-- Dark/Light mode toggle
-""")
-
-# Theme toggle
-def apply_custom_theme():
-    dark_mode = st.sidebar.toggle("🌗 Dark Mode", value=False)
-    theme_css = """
-        <style>
-        body { background-color: %s; color: %s; }
-        .stButton > button { background-color: #7E57C2; color: white; }
-        </style>
-    """ % (
-        "#121212" if dark_mode else "#ffffff",
-        "#ffffff" if dark_mode else "#000000"
-    )
-    st.markdown(theme_css, unsafe_allow_html=True)
-
-# Input handler
-def handle_file_upload(file, text):
+# 1. INPUT LOADER
+def load_and_process_input(file, text):
+    data = ""
     if file:
-        suffix = Path(file.name).suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(file.read())
-            tmp_path = tmp.name
+        ext = Path(file.name).suffix.lower()
+        if ext == ".pdf":
+            with fitz.open(stream=file.read(), filetype="pdf") as doc:
+                data = "\n".join(page.get_text() for page in doc)
+        elif ext == ".docx":
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                tmp.write(file.read())
+                data = docx2txt.process(tmp.name)
+        elif ext == ".epub":
+            book = epub.read_epub(file)
+            data = "\n".join([item.get_content().decode() for item in book.get_items() if item.get_type() == 9])
+        elif ext == ".txt":
+            data = file.read().decode("utf-8")
+        elif ext == ".mp3":
+            data = "🎤 Audio transcription coming soon"
+    elif text:
+        data = text
 
-        if suffix == ".pdf":
-            return extract_text_from_pdf(tmp_path)
-        elif suffix in [".txt", ".docx", ".epub"]:
-            return extract_text_from_textlike(tmp_path)
-        elif suffix in [".mp3", ".wav"]:
-            return transcribe_audio(tmp_path)
-        elif suffix in [".mp4", ".mov"]:
-            return extract_audio_from_video(tmp_path)
-    elif text.strip():
-        return text.strip()
+    if data:
+        st.session_state["content"] = data
+        st.success("✅ Material processed!")
 
-    return ""
-
-# Text extraction (mocked for now)
-def extract_text_from_pdf(path):
-    reader = PdfReader(path)
-    return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-
-def extract_text_from_textlike(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-def transcribe_audio(path):
-    return "Audio transcription not implemented here."
-
-def extract_audio_from_video(path):
-    return "Video to audio not implemented."
-
-# Flashcard generation logic
-def generate_flashcards(text):
-    lines = text.strip().split("\n")
+# 2. FLASHCARDS
+def generate_flashcards():
+    if "content" not in st.session_state:
+        st.warning("Please upload or input some text first.")
+        return []
+    lines = st.session_state["content"].split("\n")
     flashcards = []
-
     for line in lines:
-        if ":" in line:
-            q, a = line.split(":", 1)
-            flashcards.append({"question": q.strip(), "answer": a.strip()})
+        if len(line.strip()) > 30:
+            flashcards.append({
+                "question": f"What is: {line.strip()[:60]}?",
+                "answer": line.strip()
+            })
+    st.session_state["flashcards"] = flashcards
     return flashcards
 
-# Export
-def export_flashcards(cards, format_type):
-    if format_type == "CSV":
-        csv_file = io.StringIO()
-        writer = csv.writer(csv_file)
-        writer.writerow(["Question", "Answer"])
-        for card in cards:
-            writer.writerow([card["question"], card["answer"]])
+def flashcard_viewer(cards):
+    st.subheader("🧠 Preview Flashcards")
+    for i, card in enumerate(cards[:20]):
+        with st.expander(f"Flashcard {i+1}"):
+            st.markdown(f"**Q:** {card['question']}")
+            st.markdown(f"**A:** {card['answer']}")
 
-        b64 = base64.b64encode(csv_file.getvalue().encode()).decode()
-        href = f'<a href="data:file/csv;base64,{b64}" download="flashcards.csv">📥 Download CSV</a>'
-        st.markdown(href, unsafe_allow_html=True)
+def export_flashcards(cards):
+    if st.button("⬇️ Export Flashcards"):
+        df = pd.DataFrame(cards)
+        st.download_button("Download CSV", df.to_csv(index=False), "flashcards.csv")
 
-    elif format_type == "Anki .apkg":
-        deck = Deck(deck_id=uuid.uuid4().int >> 64, name="BatAnki Deck")
-        for card in cards:
-            note = Note(model=model, fields=[card["question"], card["answer"]])
-            deck.add_note(note)
-        pkg = Package(deck)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".apkg") as tmp:
-            pkg.write_to_file(tmp.name)
-            with open(tmp.name, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-                href = f'<a href="data:application/octet-stream;base64,{b64}" download="flashcards.apkg">📥 Download .apkg</a>'
-                st.markdown(href, unsafe_allow_html=True)
+# 3. MCQ GENERATOR
+def generate_mcqs():
+    if "content" not in st.session_state:
+        st.warning("Please upload content first.")
+        return
+    st.subheader("📝 MCQs")
+    for i in range(5):
+        q = f"Q{i+1}. What is the role of XYZ?"
+        options = ["A", "B", "C", "D"]
+        correct = random.choice(options)
+        ans = st.radio(q, options, key=f"mcq{i}")
+        if st.button(f"Submit {i+1}"):
+            if ans == correct:
+                st.success("✅ Correct!")
+            else:
+                st.error(f"❌ Wrong! Answer is {correct}")
+
+# 4. AI ASSISTANT
+def ai_assistant_reply():
+    query = st.text_input("Ask your study assistant")
+    if query and "content" in st.session_state:
+        st.success(f"🧠 Answer: This is a simulated AI reply to: {query}")
+    elif query:
+        st.warning("Please upload content first.")
+
+# 5. PLANNER
+def show_planner():
+    st.subheader("📅 Your Study Planner")
+    goal = st.text_input("📘 Today's Goal")
+    duration = st.slider("⏱️ Study Duration (mins)", 0, 240, 60)
+    st.checkbox("✅ Mark Done")
+
+# 6. ANALYTICS
+def show_analytics():
+    if "flashcards" in st.session_state:
+        total = len(st.session_state["flashcards"])
+        st.metric("🧠 Flashcards Made", total)
+        st.progress(min(1.0, total/100))
+
+# 7. THEME SWITCH
+def switch_theme():
+    theme = st.sidebar.selectbox("🌓 Theme", ["Light", "Dark"])
+    if theme == "Dark":
+        st.markdown("""<style>body { background-color: #111; color: white; }</style>""", unsafe_allow_html=True)
+
+# 8. FUTURE LABS
+def future_lab_features():
+    st.markdown("""
+    ### 🧪 Future Lab Features
+    - 📽️ YouTube to Flashcards
+    - 🎨 Image Occlusion Cards
+    - 🎤 Voice to Flashcard
+    - 📈 Adaptive Review Engine
+    - ☁️ Cloud Sync + AI Analytics
+    """)
