@@ -3,7 +3,14 @@ BatAnki: Next-Gen AI Flashcard Web App (Beta Version)
 =======================================================
 
 This app extracts text from various inputs, generates flashcards (including beta types),
-and provides export options. It’s designed using a modular approach with a separate config file.
+and provides export options. It supports multiple input sources:
+  - File Upload (PDF, TXT, DOCX, EPUB, PNG, JPG, MP3, WAV)
+  - Manual Entry
+  - Voice Input (audio file upload)
+  - YouTube Link (simulate transcript extraction)
+  - OneNote (paste HTML/MHT content)
+
+A centralized configuration (config.py) holds key settings.
 """
 
 import streamlit as st
@@ -74,9 +81,15 @@ def ocr_extract_text(image_file):
         st.warning("pytesseract not available.")
         return ""
 
+def get_youtube_transcript(youtube_url):
+    """
+    Dummy function to simulate transcript extraction from a YouTube link.
+    In a production version, you can integrate a YouTube API or youtube-dl based solution.
+    """
+    return f"Dummy transcript for YouTube video:\n{youtube_url}\n[Transcript extraction not implemented]"
+
 def preprocess_text(text):
     """Placeholder for cleaning and chunking text."""
-    # Use the configured maximum text length.
     return text.strip()[:config.MAX_TEXT_LENGTH]
 
 def summarize_text(text):
@@ -87,16 +100,26 @@ def summarize_text(text):
         return "Summary: " + text
 
 def generate_flashcards(text, include_beta=False):
-    """Generates dummy flashcards from text.
-    If include_beta is True and ENABLE_BETA_FEATURES is set, additional beta flashcard types are added.
+    """Generates flashcards based on the provided text.
+    
+    Creates a dynamic flashcard from your content (first 100 characters), then adds dummy cards.
     """
     cards = []
-    # Core flashcards
-    cards.append({
-        "type": "Basic",
-        "front": "What is BatAnki?",
-        "back": "A next-gen AI flashcard web app combining multimodal inputs."
-    })
+    if text:
+        dynamic_card = {
+            "type": "Basic",
+            "front": "What is this document about?",
+            "back": text[:100] + ("..." if len(text) > 100 else "")
+        }
+    else:
+        dynamic_card = {
+            "type": "Basic",
+            "front": "What is BatAnki?",
+            "back": "A next-gen AI flashcard web app combining multimodal inputs."
+        }
+    cards.append(dynamic_card)
+    
+    # Append additional dummy flashcards
     cards.append({
         "type": "MCQ",
         "question": "Which AI engine is used for summarization?",
@@ -108,7 +131,6 @@ def generate_flashcards(text, include_beta=False):
         "text": "BatAnki is built using ___ and Python.",
         "answer": "Streamlit"
     })
-    # Additional beta flashcard types (if enabled)
     if include_beta and config.ENABLE_BETA_FEATURES:
         cards.append({
             "type": "Reverse",
@@ -146,6 +168,68 @@ def export_cards_json(cards):
     """Exports flashcards to JSON format."""
     return json.dumps(cards, indent=4)
 
+def export_cards_apkg(cards):
+    """Exports flashcards to an APKG file using genanki.
+    
+    This function returns the path to a temporary APKG file.
+    """
+    try:
+        import genanki
+    except ImportError:
+        st.error("The genanki library is not installed. Install it via pip to enable APKG export.")
+        return None
+    
+    deck_id = 2059400110  # Use a unique deck ID here.
+    model_id = 1607392319  # Use a unique model ID.
+    
+    my_deck = genanki.Deck(
+        deck_id,
+        'BatAnki Deck'
+    )
+    
+    my_model = genanki.Model(
+        model_id,
+        'Simple Model',
+        fields=[
+            {'name': 'Question'},
+            {'name': 'Answer'},
+        ],
+        templates=[
+            {
+                'name': 'Card 1',
+                'qfmt': '{{Question}}',
+                'afmt': '{{FrontSide}}<hr id="answer">{{Answer}}',
+            },
+        ]
+    )
+    
+    # Create a note for each flashcard.
+    for card in cards:
+        if card["type"] == "Basic":
+            question = card.get("front", "")
+            answer = card.get("back", "")
+        elif card["type"] == "MCQ":
+            question = f"{card.get('question', '')}\nOptions: {', '.join(card.get('options', []))}"
+            answer = card.get("answer", "")
+        elif card["type"] == "Cloze":
+            question = card.get("text", "")
+            answer = card.get("answer", "")
+        elif card["type"] in ["Reverse", "Memo", "Image Occlusion"]:
+            question = card.get("front", "")
+            answer = card.get("back", "")
+        else:
+            question, answer = "", ""
+        note = genanki.Note(
+            model=my_model,
+            fields=[question, answer]
+        )
+        my_deck.add_note(note)
+    
+    pkg = genanki.Package(my_deck)
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.apkg')
+    pkg.write_to_file(temp_file.name)
+    return temp_file.name
+
 # ------------------ Streamlit App UI with Tabs -----------------------
 
 st.set_page_config(page_title=config.PAGE_TITLE, layout=config.PAGE_LAYOUT)
@@ -154,7 +238,10 @@ st.caption("AI Flashcards with Multimodal Input | Beta Version with Advanced Fea
 
 # Sidebar: Configure input and show future roadmap
 st.sidebar.header("Input Options")
-input_source = st.sidebar.selectbox("Select Input Source", ["File Upload", "Manual Entry", "Voice Input"])
+
+# Comprehensive input source list
+input_source = st.sidebar.selectbox("Select Input Source", 
+                                    ["File Upload", "Manual Entry", "Voice Input", "YouTube Link", "OneNote"])
 beta_enabled = st.sidebar.checkbox("Enable Beta Features", value=config.ENABLE_BETA_FEATURES)
 st.sidebar.markdown("---")
 st.sidebar.write("Future Features:")
@@ -195,6 +282,12 @@ with st.container():
         audio_file = st.file_uploader("Upload an audio file (MP3, WAV)", type=["mp3", "wav"])
         if audio_file:
             text_input = transcribe_audio(audio_file)
+    elif input_source == "YouTube Link":
+        youtube_url = st.text_input("Enter YouTube Video URL")
+        if youtube_url:
+            text_input = get_youtube_transcript(youtube_url)
+    elif input_source == "OneNote":
+        text_input = st.text_area("Paste OneNote HTML/MHT content here:", height=300)
 
 # ------------------ Main Pipeline Tab ---------------------------
 with tabs[0]:
@@ -230,6 +323,13 @@ with tabs[0]:
         json_data = export_cards_json(cards)
         st.download_button("Download as CSV", data=csv_data, file_name="BatAnki_flashcards.csv", mime="text/csv")
         st.download_button("Download as JSON", data=json_data, file_name="BatAnki_flashcards.json", mime="application/json")
+        
+        # Export APKG file if genanki is available
+        apkg_file_path = export_cards_apkg(cards)
+        if apkg_file_path:
+            with open(apkg_file_path, 'rb') as f:
+                apkg_binary = f.read()
+            st.download_button("Download as APKG", data=apkg_binary, file_name="BatAnki_deck.apkg", mime="application/octet-stream")
     else:
         st.info("Awaiting input. Please select an input method in the sidebar and upload or enter your content.")
 
