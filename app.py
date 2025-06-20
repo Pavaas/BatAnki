@@ -4,10 +4,10 @@ from configure import (
     ABOUT_TEXT, CONTACT_DETAILS, SIDEBAR_FEATURES
 )
 
-st.set_page_config(page_title="AnkiGamify", layout="wide")
+st.set_page_config(page_title="BatAnki", layout="wide")
 
 # Sidebar UI
-st.sidebar.title("📚 AnkiGamify")
+st.sidebar.title("🦇 BatAnki")
 st.sidebar.markdown("### Features")
 for feature in SIDEBAR_FEATURES:
     st.sidebar.markdown(f"- {feature}")
@@ -15,7 +15,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(CONTACT_DETAILS)
 
 # Main UI
-st.title("🧠 AnkiGamify - Flashcard Generator")
+st.title("🧠 BatAnki - AI Flashcard Generator")
 uploaded_file = st.file_uploader("Upload Study Material (PDF, DOCX, TXT, YouTube Link, etc.)", type=SUPPORTED_FORMATS)
 
 if uploaded_file:
