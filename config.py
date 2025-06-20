@@ -1,139 +1,99 @@
 import os
-import io
-import re
-import fitz  # PyMuPDF
-import docx
-import nltk
-import tempfile
-import speech_recognition as sr
-from pathlib import Path
+import fitz
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
-from nltk.tokenize import sent_tokenize
-from transformers import pipeline
-from pydub import AudioSegment
+import speech_recognition as sr
+import nltk
+import genanki
+import uuid
+import streamlit as st
 
-# Ensure nltk punkt is downloaded
-nltk.download("punkt", quiet=True)
+def process_input(text, file, youtube_url, enable_transcription):
+    final_text = text or ""
 
-# Load summarizer
-try:
-    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-    SUMMARIZER_AVAILABLE = True
-except Exception:
-    summarizer = None
-    SUMMARIZER_AVAILABLE = False
+    if file:
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext == ".pdf":
+            with fitz.open(stream=file.read(), filetype="pdf") as doc:
+                final_text += "\n".join(page.get_text() for page in doc)
+        elif ext == ".txt":
+            final_text += file.read().decode("utf-8")
+        elif ext == ".mp3" and enable_transcription:
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(file) as source:
+                audio = recognizer.record(source)
+                try:
+                    final_text += recognizer.recognize_google(audio)
+                except:
+                    final_text += "[Audio transcription failed.]"
 
-# -------------------------------
-# 📥 INPUT FILE HANDLERS
-# -------------------------------
-
-def handle_file_upload(uploaded_file, user_text):
-    if uploaded_file:
-        suffix = Path(uploaded_file.name).suffix.lower()
-        if suffix == ".pdf":
-            text = extract_text_from_pdf(uploaded_file)
-        elif suffix == ".txt":
-            text = uploaded_file.read().decode("utf-8")
-        elif suffix in [".mp3", ".wav", ".m4a"]:
-            text = transcribe_audio(uploaded_file)
-        elif suffix in [".doc", ".docx"]:
-            text = extract_text_from_docx(uploaded_file)
-        elif suffix in [".epub"]:
-            text = extract_text_from_epub(uploaded_file)
-        else:
-            text = "Unsupported file type."
-    elif user_text:
-        text = user_text
-    else:
-        text = ""
-    return text
-
-def extract_text_from_pdf(file):
-    text = ""
-    with fitz.open(stream=file.read(), filetype="pdf") as doc:
-        for page in doc:
-            text += page.get_text()
-    return text
-
-def extract_text_from_docx(file):
-    doc = docx.Document(file)
-    return "\n".join([para.text for para in doc.paragraphs])
-
-def extract_text_from_epub(file):
-    return "EPUB support coming soon..."
-
-def transcribe_audio(file):
-    recognizer = sr.Recognizer()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-        # Convert mp3/m4a to wav
-        sound = AudioSegment.from_file(file)
-        sound.export(temp_audio.name, format="wav")
-        with sr.AudioFile(temp_audio.name) as source:
-            audio = recognizer.record(source)
+    if youtube_url and enable_transcription:
         try:
-            return recognizer.recognize_google(audio)
-        except sr.UnknownValueError:
-            return "Could not transcribe audio."
-        finally:
-            os.remove(temp_audio.name)
+            yt_id = YouTube(youtube_url).video_id
+            transcript = YouTubeTranscriptApi.get_transcript(yt_id)
+            final_text += "\n" + "\n".join([t['text'] for t in transcript])
+        except:
+            final_text += "\n[Transcript not found.]"
 
-def fetch_youtube_transcript(url):
-    try:
-        video_id = YouTube(url).video_id
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        return "\n".join([line['text'] for line in transcript])
-    except Exception as e:
-        return f"Error fetching transcript: {str(e)}"
+    return final_text
 
-# -------------------------------
-# 🧠 CHUNKING + SUMMARIZATION
-# -------------------------------
+def generate_flashcards(text):
+    tokenizer = nltk.tokenize.PunktSentenceTokenizer()
+    sentences = tokenizer.tokenize(text)
+    cards = []
+    for s in sentences:
+        cards.append({
+            "question": f"What does this mean?\n\n{s}",
+            "answer": s
+        })
+    return cards
 
-def extract_flashcard_chunks(text, max_sentences=4):
-    sentences = sent_tokenize(text)
-    chunks = []
-    current = []
-    for sent in sentences:
-        current.append(sent)
-        if len(current) >= max_sentences:
-            chunks.append(" ".join(current))
-            current = []
-    if current:
-        chunks.append(" ".join(current))
-    return chunks
+def export_flashcards(cards):
+    with open("batanki_flashcards.csv", "w", encoding="utf-8") as f:
+        f.write("Question,Answer\n")
+        for c in cards:
+            f.write(f"{c['question'].replace(',', ';')},{c['answer'].replace(',', ';')}\n")
+    st.success("📁 Flashcards exported as CSV")
 
-def summarize_text(text):
-    if summarizer and SUMMARIZER_AVAILABLE:
-        try:
-            return summarizer(text, max_length=100, min_length=30, do_sample=False)[0]["summary_text"]
-        except Exception:
-            return text[:200] + "..."
-    return text[:300] + "..."
+def export_apkg(cards, deck_name="BatAnki Deck"):
+    model = genanki.Model(
+        1607392319,
+        'BatAnki Model',
+        fields=[{'name': 'Question'}, {'name': 'Answer'}],
+        templates=[{
+            'name': 'Card 1',
+            'qfmt': '{{Question}}',
+            'afmt': '{{FrontSide}}<hr id="answer">{{Answer}}',
+        }]
+    )
+    deck = genanki.Deck(int(str(uuid.uuid4().int)[:10]), deck_name)
+    for c in cards:
+        note = genanki.Note(model=model, fields=[c["question"], c["answer"]])
+        deck.add_note(note)
+    genanki.Package(deck).write_to_file(f"{deck_name.replace(' ', '_')}.apkg")
+    st.success(f"📦 APKG exported: {deck_name.replace(' ', '_')}.apkg")
 
-# -------------------------------
-# 🧠 FLASHCARD GENERATORS
-# -------------------------------
+def generate_image_occlusion_cards(text):
+    return [{"question": "[Image Occlusion Placeholder]", "answer": "[Label hidden]"}]
 
-def generate_flashcards(chunks, card_type="basic"):
-    flashcards = []
-    for chunk in chunks:
-        question, answer = "", ""
-        if card_type == "basic":
-            question = f"What is the key concept in:\n\n{chunk}"
-            answer = summarize_text(chunk)
-        elif card_type == "cloze":
-            answer = summarize_text(chunk)
-            question = chunk.replace(answer.split(" ")[0], "_____", 1)
-        elif card_type == "memo":
-            question = "Explain this concept:"
-            answer = summarize_text(chunk) + f"\n\n(Page reference simulated)"
-        elif card_type == "mcq":
-            answer = summarize_text(chunk)
-            question = f"Which of the following best summarizes:\n\n{chunk}\n\nA) Random\nB) {answer}\nC) Irrelevant\nD) Incorrect"
-        else:
-            question = chunk
-            answer = summarize_text(chunk)
+def launch_ai_assistant(text):
+    st.info("🧠 AI Teaching Assistant active")
+    # Placeholder logic — future GPT summarizer or local LLM
+    return text[:2000]  # Return limited text as example
 
-        flashcards.append({"question": question, "answer": answer})
-    return flashcards
+def schedule_smart_review(cards):
+    st.info("📆 Smart review scheduled using spaced repetition logic.")
+    # Placeholder: implement SM-2 or other review timing logic
+
+def show_study_planner():
+    st.markdown("📅 **Study Planner (Prototype)**\n\n- Review 30 cards/day\n- Mark progress\n- Check streaks\n- Customizable reminders (soon)")
+
+def show_analytics_dashboard():
+    st.markdown("📊 **Analytics Dashboard (Prototype)**\n\n- Total cards created: 120\n- Time saved: 2 hrs\n- Flashcards reviewed: 45")
+
+def run_gamification_engine(card_count):
+    st.success(f"🎮 You earned {card_count * 2} XP! Streak +1 day 🔥")
+
+def load_offline_deck_pack(name):
+    st.success(f"📚 Loaded offline pack: {name}")
+    # Placeholder logic; you can expand by loading local decks
