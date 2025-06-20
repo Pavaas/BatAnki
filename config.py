@@ -1,117 +1,117 @@
-import fitz, docx2txt
-from ebooklib import epub
+import fitz  # PyMuPDF
+import os
 import tempfile
 import streamlit as st
+import nltk
+import genanki
+import csv
 from pathlib import Path
-import pandas as pd
-import random
+from nltk.tokenize import sent_tokenize
 
-# 1. INPUT LOADER
-def load_and_process_input(file, text):
-    data = ""
-    if file:
-        ext = Path(file.name).suffix.lower()
-        if ext == ".pdf":
-            with fitz.open(stream=file.read(), filetype="pdf") as doc:
-                data = "\n".join(page.get_text() for page in doc)
-        elif ext == ".docx":
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(file.read())
-                data = docx2txt.process(tmp.name)
-        elif ext == ".epub":
-            book = epub.read_epub(file)
-            data = "\n".join([item.get_content().decode() for item in book.get_items() if item.get_type() == 9])
-        elif ext == ".txt":
-            data = file.read().decode("utf-8")
-        elif ext == ".mp3":
-            data = "🎤 Audio transcription coming soon"
-    elif text:
-        data = text
+nltk.download("punkt")
 
-    if data:
-        st.session_state["content"] = data
-        st.success("✅ Material processed!")
+# Handle file upload or raw text
+def handle_file_upload(uploaded_file, text_input):
+    if uploaded_file:
+        suffix = Path(uploaded_file.name).suffix.lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(uploaded_file.read())
+            file_path = tmp.name
+        if suffix == ".pdf":
+            return extract_text_from_pdf(file_path)
+        elif suffix in [".txt", ".docx"]:
+            return Path(file_path).read_text()
+        else:
+            return "Unsupported file type."
+    elif text_input:
+        return text_input
+    else:
+        return ""
 
-# 2. FLASHCARDS
-def generate_flashcards():
-    if "content" not in st.session_state:
-        st.warning("Please upload or input some text first.")
-        return []
-    lines = st.session_state["content"].split("\n")
-    flashcards = []
-    for line in lines:
-        if len(line.strip()) > 30:
-            flashcards.append({
-                "question": f"What is: {line.strip()[:60]}?",
-                "answer": line.strip()
-            })
-    st.session_state["flashcards"] = flashcards
-    return flashcards
+# Extract text from PDF
+def extract_text_from_pdf(pdf_path):
+    text = ""
+    doc = fitz.open(pdf_path)
+    for page in doc:
+        text += page.get_text()
+    return text
 
-def flashcard_viewer(cards):
-    st.subheader("🧠 Preview Flashcards")
+# Chunk into digestible flashcard units
+def extract_flashcard_chunks(text, max_sentences=3):
+    sentences = sent_tokenize(text)
+    chunks = []
+    buffer = []
+    for sent in sentences:
+        buffer.append(sent)
+        if len(buffer) >= max_sentences:
+            chunks.append(" ".join(buffer))
+            buffer = []
+    if buffer:
+        chunks.append(" ".join(buffer))
+    return chunks
+
+# Generate different types of flashcards
+def generate_anki_cards(chunks, card_type="Basic"):
+    cards = []
+    for chunk in chunks:
+        front, back = "", ""
+        if card_type == "Cloze":
+            front = chunk.replace(" is ", " {{c1::is}} ", 1)
+            back = chunk
+        elif card_type == "Memo":
+            front = f"What does the following mean?\n\n{chunk[:100]}"
+            back = chunk + " (with explanation and page reference)"
+        elif card_type == "Reverse":
+            front = chunk.split(".")[0]
+            back = chunk
+        elif card_type == "MCQ":
+            front = f"Q: {chunk.split('.')[0]}\n(a) Option A\n(b) Option B\n(c) Option C\n(d) Option D"
+            back = "Correct Answer: (b) Option B"
+        else:
+            front = chunk.split(".")[0]
+            back = chunk
+        cards.append({"Front": front, "Back": back})
+    return cards
+
+# Preview generated cards
+def show_flashcards(cards):
+    st.subheader("🧠 Flashcard Preview")
     for i, card in enumerate(cards[:20]):
-        with st.expander(f"Flashcard {i+1}"):
-            st.markdown(f"**Q:** {card['question']}")
-            st.markdown(f"**A:** {card['answer']}")
+        st.markdown(f"**Q{i+1}:** {card['Front']}")
+        st.markdown(f"**A{i+1}:** {card['Back']}")
+        st.markdown("---")
 
-def export_flashcards(cards):
-    if st.button("⬇️ Export Flashcards"):
-        df = pd.DataFrame(cards)
-        st.download_button("Download CSV", df.to_csv(index=False), "flashcards.csv")
+# Export to Anki format
+def export_apkg(cards, deck_name="BatAnkiDeck"):
+    model = genanki.Model(
+        1607392319,
+        'BatAnki Model',
+        fields=[{"name": "Front"}, {"name": "Back"}],
+        templates=[{
+            "name": "Card 1",
+            "qfmt": "{{Front}}",
+            "afmt": "{{Front}}<hr id='answer'>{{Back}}"
+        }]
+    )
+    deck = genanki.Deck(2059400110, deck_name)
+    for card in cards:
+        note = genanki.Note(model=model, fields=[card["Front"], card["Back"]])
+        deck.add_note(note)
 
-# 3. MCQ GENERATOR
-def generate_mcqs():
-    if "content" not in st.session_state:
-        st.warning("Please upload content first.")
-        return
-    st.subheader("📝 MCQs")
-    for i in range(5):
-        q = f"Q{i+1}. What is the role of XYZ?"
-        options = ["A", "B", "C", "D"]
-        correct = random.choice(options)
-        ans = st.radio(q, options, key=f"mcq{i}")
-        if st.button(f"Submit {i+1}"):
-            if ans == correct:
-                st.success("✅ Correct!")
-            else:
-                st.error(f"❌ Wrong! Answer is {correct}")
+    file_name = f"{deck_name.replace(' ', '_')}.apkg"
+    genanki.Package(deck).write_to_file(file_name)
+    with open(file_name, "rb") as f:
+        st.download_button("📥 Download Anki Package (.apkg)", f, file_name, mime="application/octet-stream")
+    os.remove(file_name)
 
-# 4. AI ASSISTANT
-def ai_assistant_reply():
-    query = st.text_input("Ask your study assistant")
-    if query and "content" in st.session_state:
-        st.success(f"🧠 Answer: This is a simulated AI reply to: {query}")
-    elif query:
-        st.warning("Please upload content first.")
-
-# 5. PLANNER
-def show_planner():
-    st.subheader("📅 Your Study Planner")
-    goal = st.text_input("📘 Today's Goal")
-    duration = st.slider("⏱️ Study Duration (mins)", 0, 240, 60)
-    st.checkbox("✅ Mark Done")
-
-# 6. ANALYTICS
-def show_analytics():
-    if "flashcards" in st.session_state:
-        total = len(st.session_state["flashcards"])
-        st.metric("🧠 Flashcards Made", total)
-        st.progress(min(1.0, total/100))
-
-# 7. THEME SWITCH
-def switch_theme():
-    theme = st.sidebar.selectbox("🌓 Theme", ["Light", "Dark"])
-    if theme == "Dark":
-        st.markdown("""<style>body { background-color: #111; color: white; }</style>""", unsafe_allow_html=True)
-
-# 8. FUTURE LABS
-def future_lab_features():
-    st.markdown("""
-    ### 🧪 Future Lab Features
-    - 📽️ YouTube to Flashcards
-    - 🎨 Image Occlusion Cards
-    - 🎤 Voice to Flashcard
-    - 📈 Adaptive Review Engine
-    - ☁️ Cloud Sync + AI Analytics
-    """)
+# Export to CSV
+def export_csv(cards, deck_name="BatAnkiDeck"):
+    file_name = f"{deck_name.replace(' ', '_')}.csv"
+    with open(file_name, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Front", "Back"])
+        for card in cards:
+            writer.writerow([card["Front"], card["Back"]])
+    with open(file_name, "rb") as f:
+        st.download_button("📥 Download CSV", f, file_name, mime="text/csv")
+    os.remove(file_name)
