@@ -1,104 +1,126 @@
-import fitz  # PyMuPDF
-import docx
-import pytesseract
-from PIL import Image
-import tempfile
-import csv
-import genanki
+# config.py
+
+import streamlit as st
+import base64
 import io
+import tempfile
+import os
+import csv
+from genanki import Note, Deck, Package, Model
+import uuid
+from PyPDF2 import PdfReader
 
-SUPPORTED_FORMATS = ['pdf', 'txt', 'docx', 'mp3', 'mp4', 'epub']
+# Basic Flashcard Model
+model = Model(
+    model_id=1607392319,
+    name="BasicModel",
+    fields=[
+        {"name": "Question"},
+        {"name": "Answer"}
+    ],
+    templates=[
+        {
+            "name": "Card 1",
+            "qfmt": "{{Question}}",
+            "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
+        }
+    ]
+)
 
-SIDEBAR_FEATURES = [
-    "Multimodal Inputs",
-    "AI Flashcard Engine",
-    "Memo Cards with Explanation",
-    "Image Occlusion Cards",
-    "Export to CSV / Anki",
-    "Smart Review Scheduler (Coming Soon)",
-    "Offline + Cloud Ready"
-]
+# Sidebar options
+def show_sidebar_options():
+    st.sidebar.image("https://i.imgur.com/B6jC5kR.png", width=180)
+    st.sidebar.header("🧠 BatAnki Menu")
+    st.sidebar.markdown("""
+- Upload PDF, DOCX, TXT, Audio, YouTube
+- Export to Anki or CSV
+- Use AI to generate high-yield cards
+- Dark/Light mode toggle
+""")
 
-CONTACT_DETAILS = """
-**Contact Us:**
-- [Instagram](https://www.instagram.com/dr.pavanreddy)
-- 📧 Pavanreddy337@gmail.com
-- [GitHub](https://github.com/Pavaas)
-"""
+# Theme toggle
+def apply_custom_theme():
+    dark_mode = st.sidebar.toggle("🌗 Dark Mode", value=False)
+    theme_css = """
+        <style>
+        body { background-color: %s; color: %s; }
+        .stButton > button { background-color: #7E57C2; color: white; }
+        </style>
+    """ % (
+        "#121212" if dark_mode else "#ffffff",
+        "#ffffff" if dark_mode else "#000000"
+    )
+    st.markdown(theme_css, unsafe_allow_html=True)
 
-ABOUT_TEXT = """
-**About BatAnki**  
-BatAnki is a powerful, AI-powered flashcard creation engine built to convert textbooks, YouTube videos, and lectures into smart, review-optimized cards.  
-Generate Anki-style decks, memo explanations, clozes, and even image occlusion!
-"""
+# Input handler
+def handle_file_upload(file, text):
+    if file:
+        suffix = Path(file.name).suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(file.read())
+            tmp_path = tmp.name
 
-def process_file(uploaded_file):
-    ext = uploaded_file.name.split(".")[-1].lower()
-    if ext == "pdf":
-        return extract_text_from_pdf(uploaded_file)
-    elif ext == "txt":
-        return uploaded_file.read().decode()
-    elif ext == "docx":
-        return extract_text_from_docx(uploaded_file)
-    else:
-        return "Unsupported or upcoming format."
+        if suffix == ".pdf":
+            return extract_text_from_pdf(tmp_path)
+        elif suffix in [".txt", ".docx", ".epub"]:
+            return extract_text_from_textlike(tmp_path)
+        elif suffix in [".mp3", ".wav"]:
+            return transcribe_audio(tmp_path)
+        elif suffix in [".mp4", ".mov"]:
+            return extract_audio_from_video(tmp_path)
+    elif text.strip():
+        return text.strip()
 
-def extract_text_from_pdf(file):
-    text = ""
-    pdf = fitz.open(stream=file.read(), filetype="pdf")
-    for page in pdf:
-        text += page.get_text()
-    return text
+    return ""
 
-def extract_text_from_docx(file):
-    doc = docx.Document(file)
-    return "\n".join([p.text for p in doc.paragraphs])
+# Text extraction (mocked for now)
+def extract_text_from_pdf(path):
+    reader = PdfReader(path)
+    return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
 
-def generate_flashcards(text, card_type):
-    lines = [line.strip() for line in text.split('\n') if len(line.strip()) > 20]
-    cards = []
+def extract_text_from_textlike(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    for i, line in enumerate(lines[:30]):
-        if card_type == "Basic":
-            cards.append({"front": line.split('.')[0], "back": line})
-        elif card_type == "Cloze":
-            parts = line.split(" ")
-            if len(parts) > 6:
-                cloze = f"{' '.join(parts[:2])} [...] {' '.join(parts[5:])}"
-                cards.append({"front": cloze, "back": line})
-        elif card_type == "Memo Card":
-            cards.append({"front": f"Explain: {line[:50]}...", "back": f"{line}\n\n(Page estimated: {i+1})"})
-        elif card_type == "Image Occlusion":
-            cards.append({"front": f"Image Occlusion Placeholder {i+1}", "back": "Hidden answer image"})
-    return cards
+def transcribe_audio(path):
+    return "Audio transcription not implemented here."
 
-def export_deck(cards, export_format):
-    import streamlit as st
-    if export_format == "CSV":
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["Front", "Back"])
+def extract_audio_from_video(path):
+    return "Video to audio not implemented."
+
+# Flashcard generation logic
+def generate_flashcards(text):
+    lines = text.strip().split("\n")
+    flashcards = []
+
+    for line in lines:
+        if ":" in line:
+            q, a = line.split(":", 1)
+            flashcards.append({"question": q.strip(), "answer": a.strip()})
+    return flashcards
+
+# Export
+def export_flashcards(cards, format_type):
+    if format_type == "CSV":
+        csv_file = io.StringIO()
+        writer = csv.writer(csv_file)
+        writer.writerow(["Question", "Answer"])
         for card in cards:
-            writer.writerow([card['front'], card['back']])
-        st.download_button("Download CSV", output.getvalue(), "flashcards.csv", "text/csv")
+            writer.writerow([card["question"], card["answer"]])
 
-    elif export_format == "APKG":
-        model = genanki.Model(
-            1607392319,
-            'Simple Model',
-            fields=[{"name": "Front"}, {"name": "Back"}],
-            templates=[{
-                "name": "Card 1",
-                "qfmt": "{{Front}}",
-                "afmt": "{{FrontSide}}<hr id='answer'>{{Back}}"
-            }]
-        )
-        deck = genanki.Deck(2059400110, "BatAnki Deck")
+        b64 = base64.b64encode(csv_file.getvalue().encode()).decode()
+        href = f'<a href="data:file/csv;base64,{b64}" download="flashcards.csv">📥 Download CSV</a>'
+        st.markdown(href, unsafe_allow_html=True)
+
+    elif format_type == "Anki .apkg":
+        deck = Deck(deck_id=uuid.uuid4().int >> 64, name="BatAnki Deck")
         for card in cards:
-            deck.add_note(genanki.Note(model=model, fields=[card['front'], card['back']]))
-
-        package = genanki.Package(deck)
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-            package.write_to_file(tmp_file.name)
-            with open(tmp_file.name, "rb") as f:
-                st.download_button("Download APKG", f.read(), "flashcards.apkg")
+            note = Note(model=model, fields=[card["question"], card["answer"]])
+            deck.add_note(note)
+        pkg = Package(deck)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".apkg") as tmp:
+            pkg.write_to_file(tmp.name)
+            with open(tmp.name, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+                href = f'<a href="data:application/octet-stream;base64,{b64}" download="flashcards.apkg">📥 Download .apkg</a>'
+                st.markdown(href, unsafe_allow_html=True)
