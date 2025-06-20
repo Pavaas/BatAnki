@@ -9,10 +9,8 @@ genanki
 PyPDF2
 docx2txt
 ebooklib
-PyMuPDF
 nltk
 python-docx
-speechrecognition
 pyttsx3
 youtube-transcript-api
 transformers
